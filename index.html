@@ -519,6 +519,74 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
   .hidden { display: none !important; }
+
+  /* EDIT VIEW */
+  .edit-day-selector {
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-bottom: 16px;
+  }
+  .edit-day-selector::-webkit-scrollbar { display: none; }
+  .edit-day-btn {
+    flex-shrink: 0; padding: 7px 14px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted);
+    font-family: 'DM Sans', sans-serif;
+  }
+  .edit-day-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  .edit-section { margin-bottom: 20px; }
+  .edit-section-title {
+    font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .edit-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .edit-ex-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 8px;
+  }
+  .edit-ex-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .edit-ex-name {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13px; font-weight: 600; color: var(--text);
+    font-family: 'DM Sans', sans-serif; outline: none;
+  }
+  .edit-ex-name:focus { border-color: var(--accent); }
+  .edit-nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .edit-num-wrap { display: flex; flex-direction: column; gap: 3px; }
+  .edit-num-label { font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+  .edit-num-input {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 6px; font-size: 13px; font-weight: 600; color: var(--text);
+    text-align: center; width: 100%; outline: none; font-family: 'DM Sans', sans-serif;
+  }
+  .edit-num-input:focus { border-color: var(--accent); }
+  .edit-note-input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 12px; color: var(--muted); font-family: 'DM Sans', sans-serif;
+    outline: none; resize: none;
+  }
+  .edit-note-input:focus { border-color: var(--accent3); }
+
+  .edit-btn-row { display: flex; gap: 6px; margin-top: 8px; }
+  .edit-btn {
+    padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: transparent;
+    color: var(--muted); font-family: 'DM Sans', sans-serif;
+  }
+  .edit-btn.danger { color: var(--danger); border-color: var(--danger); }
+  .edit-btn.up, .edit-btn.down { padding: 6px 10px; }
+
+  .add-ex-btn {
+    width: 100%; padding: 10px; border-radius: 10px; border: 1px dashed var(--border);
+    background: transparent; color: var(--muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 4px;
+  }
+  .add-ex-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .add-section-btn {
+    width: 100%; padding: 10px; border-radius: 10px; border: 1px dashed var(--accent);
+    background: transparent; color: var(--accent); font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 8px;
+  }
 </style>
 </head>
 <body>
@@ -545,6 +613,9 @@
   </button>
   <button class="nav-btn" onclick="switchView('notes')" id="navNotes">
     <span>📝</span><span>Note</span>
+  </button>
+  <button class="nav-btn" onclick="switchView('edit')" id="navEdit">
+    <span>✏️</span><span>Modifica</span>
   </button>
 </div>
 
@@ -807,13 +878,15 @@ function render() {
   renderTabs();
   if (currentView === 'workout') renderWorkout();
   else if (currentView === 'stats') renderStats();
+  else if (currentView === 'edit') renderEdit();
   else renderNotes();
   updateStreak();
 }
 
 function renderTabs() {
+  const sched = getCustomSchedule();
   const tabs = document.getElementById('weekTabs');
-  tabs.innerHTML = SCHEDULE.map((d, i) => {
+  tabs.innerHTML = sched.map((d, i) => {
     const isDone = state[getDayKey(i)];
     const cls = i === activeDay ? 'tab active' : isDone ? 'tab done' : d.rest ? 'tab rest' : 'tab';
     return `<button class="${cls}" onclick="switchDay(${i})">${d.day}</button>`;
@@ -821,7 +894,8 @@ function renderTabs() {
 }
 
 function renderWorkout() {
-  const d = SCHEDULE[activeDay];
+  const sched = getCustomSchedule();
+  const d = sched[activeDay];
   const content = document.getElementById('mainContent');
 
   if (d.rest) {
@@ -942,17 +1016,17 @@ function renderExCard(ex, dayIdx, idx, isDone, isOpen, color) {
 }
 
 function renderStats() {
+  const sched = getCustomSchedule();
   const wk = getWeekKey();
   let totalSessions = 0;
   let totalSets = 0;
   for (let i = 0; i < 7; i++) {
     if (state[getDayKey(i)]) totalSessions++;
   }
-  // Count sets done this week
   Object.keys(state).forEach(k => { if (k.includes('_d') && k.endsWith('_d') && state[k]) totalSets++; });
 
   const days = ['L','M','M','G','V','S','D'];
-  const bars = SCHEDULE.map((d, i) => {
+  const bars = sched.map((d, i) => {
     const done = state[getDayKey(i)];
     return `<div class="chart-col">
       <div class="chart-bar ${done ? 'filled' : ''}" style="height:${done ? '100%' : '20%'}"></div>
@@ -1027,7 +1101,7 @@ function switchView(view) {
 }
 
 function updateNavBtns() {
-  ['workout','stats','notes'].forEach(v => {
+  ['workout','stats','notes','edit'].forEach(v => {
     document.getElementById('nav'+v.charAt(0).toUpperCase()+v.slice(1))?.classList.toggle('active', v===currentView);
   });
 }
@@ -1068,7 +1142,8 @@ function toggleSet(dayIdx, exIdx, setIdx, restSec, color) {
 }
 
 function getExByIdx(dayIdx, exIdx) {
-  const d = SCHEDULE[dayIdx];
+  const sched = getCustomSchedule();
+  const d = sched[dayIdx];
   if (!d || d.rest) return null;
   let i = 0;
   for (const sec of d.sections) {
@@ -1121,7 +1196,8 @@ function toggleCardio(dayIdx) {
 }
 
 function checkDayComplete(dayIdx) {
-  const d = SCHEDULE[dayIdx];
+  const sched = getCustomSchedule();
+  const d = sched[dayIdx];
   if (!d || d.rest) return;
   let total = 0, done = 0;
   d.sections.forEach(sec => { sec.exercises.forEach((_, i) => { total++; }); });
@@ -1137,12 +1213,163 @@ function checkDayComplete(dayIdx) {
 }
 
 function updateStreak() {
+  const sched = getCustomSchedule();
   let streak = 0;
   for (let i = activeDay; i >= 0; i--) {
-    if (SCHEDULE[i].rest || state[getDayKey(i)]) streak++;
+    if (sched[i].rest || state[getDayKey(i)]) streak++;
     else break;
   }
   document.getElementById('streakCount').textContent = streak;
+}
+
+// ─── EDIT VIEW ────────────────────────────────────────────────────────────────
+let editDay = 0;
+
+function getCustomSchedule() {
+  // Usa la versione personalizzata se esiste, altrimenti quella di default
+  if (state['customSchedule']) return JSON.parse(JSON.stringify(state['customSchedule']));
+  return JSON.parse(JSON.stringify(SCHEDULE));
+}
+
+function saveCustomSchedule(sched) {
+  state['customSchedule'] = sched;
+  saveState();
+}
+
+function renderEdit() {
+  const sched = getCustomSchedule();
+  const content = document.getElementById('mainContent');
+
+  // Selettore giorno
+  const dayBtns = sched.map((d, i) => 
+    `<button class="edit-day-btn ${i===editDay?'active':''}" onclick="editDay=${i};renderEdit()">${d.day}</button>`
+  ).join('');
+
+  const d = sched[editDay];
+  let html = `
+    <div style="padding-top:4px">
+      <div class="edit-day-selector">${dayBtns}</div>`;
+
+  if (d.rest) {
+    html += `<div style="text-align:center;padding:40px 20px;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:12px">😴</div>
+      <div style="font-size:14px">Giorno di riposo — non modificabile</div>
+    </div>`;
+  } else {
+    d.sections.forEach((sec, si) => {
+      html += `
+        <div class="edit-section">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <input class="edit-num-input" style="flex:1;text-align:left;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase"
+              value="${sec.label}"
+              onchange="editSectionLabel(${editDay},${si},this.value)">
+          </div>`;
+      sec.exercises.forEach((ex, ei) => {
+        html += `
+          <div class="edit-ex-card" id="editex_${si}_${ei}">
+            <div class="edit-ex-row">
+              <input class="edit-ex-name" value="${ex.name}" 
+                onchange="editExField(${editDay},${si},${ei},'name',this.value)" 
+                placeholder="Nome esercizio">
+            </div>
+            <div class="edit-nums">
+              <div class="edit-num-wrap">
+                <div class="edit-num-label">Serie</div>
+                <input class="edit-num-input" type="number" min="1" max="10" value="${ex.sets}"
+                  onchange="editExField(${editDay},${si},${ei},'sets',parseInt(this.value))">
+              </div>
+              <div class="edit-num-wrap">
+                <div class="edit-num-label">Ripetizioni</div>
+                <input class="edit-num-input" value="${ex.reps}"
+                  onchange="editExField(${editDay},${si},${ei},'reps',this.value)">
+              </div>
+              <div class="edit-num-wrap">
+                <div class="edit-num-label">Recupero (s)</div>
+                <input class="edit-num-input" type="number" min="0" value="${ex.rest}"
+                  onchange="editExField(${editDay},${si},${ei},'rest',parseInt(this.value))">
+              </div>
+            </div>
+            <textarea class="edit-note-input" rows="2" 
+              onchange="editExField(${editDay},${si},${ei},'note',this.value)"
+              placeholder="Nota / consiglio tecnico">${ex.note}</textarea>
+            <div class="edit-btn-row">
+              <button class="edit-btn up" onclick="moveEx(${editDay},${si},${ei},-1)" title="Su">↑</button>
+              <button class="edit-btn down" onclick="moveEx(${editDay},${si},${ei},1)" title="Giù">↓</button>
+              <button class="edit-btn danger" onclick="deleteEx(${editDay},${si},${ei})">🗑 Rimuovi</button>
+            </div>
+          </div>`;
+      });
+      html += `
+          <button class="add-ex-btn" onclick="addEx(${editDay},${si})">+ Aggiungi esercizio</button>
+        </div>`;
+    });
+    html += `<button class="add-section-btn" onclick="addSection(${editDay})">+ Aggiungi sezione</button>`;
+  }
+
+  html += `
+    <div style="margin-top:20px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;font-size:12px;color:var(--muted);line-height:1.6">
+      ⚠️ Le modifiche sovrascrivono la scheda originale e si sincronizzano sul cloud. Per tornare alla scheda originale usa il pulsante qui sotto.
+      <br><br>
+      <button class="edit-btn danger" onclick="resetSchedule()" style="font-size:12px">↩ Ripristina scheda originale</button>
+    </div>
+  </div>`;
+
+  content.innerHTML = html;
+}
+
+function editExField(dayIdx, secIdx, exIdx, field, value) {
+  const sched = getCustomSchedule();
+  sched[dayIdx].sections[secIdx].exercises[exIdx][field] = value;
+  saveCustomSchedule(sched);
+}
+
+function editSectionLabel(dayIdx, secIdx, value) {
+  const sched = getCustomSchedule();
+  sched[dayIdx].sections[secIdx].label = value;
+  saveCustomSchedule(sched);
+}
+
+function moveEx(dayIdx, secIdx, exIdx, dir) {
+  const sched = getCustomSchedule();
+  const exs = sched[dayIdx].sections[secIdx].exercises;
+  const newIdx = exIdx + dir;
+  if (newIdx < 0 || newIdx >= exs.length) return;
+  [exs[exIdx], exs[newIdx]] = [exs[newIdx], exs[exIdx]];
+  saveCustomSchedule(sched);
+  renderEdit();
+}
+
+function deleteEx(dayIdx, secIdx, exIdx) {
+  const sched = getCustomSchedule();
+  sched[dayIdx].sections[secIdx].exercises.splice(exIdx, 1);
+  saveCustomSchedule(sched);
+  renderEdit();
+}
+
+function addEx(dayIdx, secIdx) {
+  const sched = getCustomSchedule();
+  sched[dayIdx].sections[secIdx].exercises.push({
+    name: 'Nuovo esercizio', sets: 3, reps: '10–12', rest: 60, note: 'Nota tecnica'
+  });
+  saveCustomSchedule(sched);
+  renderEdit();
+}
+
+function addSection(dayIdx) {
+  const sched = getCustomSchedule();
+  sched[dayIdx].sections.push({
+    label: 'NUOVA SEZIONE',
+    exercises: [{ name: 'Nuovo esercizio', sets: 3, reps: '10–12', rest: 60, note: 'Nota tecnica' }]
+  });
+  saveCustomSchedule(sched);
+  renderEdit();
+}
+
+function resetSchedule() {
+  if (!confirm('Sei sicuro? Perderai tutte le modifiche alla scheda.')) return;
+  delete state['customSchedule'];
+  saveState();
+  renderEdit();
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
