@@ -1263,6 +1263,7 @@ function renderEdit() {
             <input class="edit-num-input" style="flex:1;text-align:left;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase"
               value="${sec.label}"
               onchange="editSectionLabel(${editDay},${si},this.value)">
+            <button class="edit-btn danger" onclick="deleteSection(${editDay},${si})" title="Elimina sezione">🗑</button>
           </div>`;
       sec.exercises.forEach((ex, ei) => {
         html += `
@@ -1351,6 +1352,15 @@ function addEx(dayIdx, secIdx) {
   sched[dayIdx].sections[secIdx].exercises.push({
     name: 'Nuovo esercizio', sets: 3, reps: '10–12', rest: 60, note: 'Nota tecnica'
   });
+  saveCustomSchedule(sched);
+  renderEdit();
+}
+
+function deleteSection(dayIdx, secIdx) {
+  const sched = getCustomSchedule();
+  if (sched[dayIdx].sections.length <= 1) { alert('Deve esserci almeno una sezione.'); return; }
+  if (!confirm('Eliminare questa sezione e tutti i suoi esercizi?')) return;
+  sched[dayIdx].sections.splice(secIdx, 1);
   saveCustomSchedule(sched);
   renderEdit();
 }
