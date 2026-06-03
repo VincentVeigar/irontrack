@@ -221,7 +221,7 @@ const DEFAULT_PLAN={
   ]
 };
 
-let state={diet:{},customPlan:null};
+let state={diet:{},customPlan:null,foodLibrary:[]};
 let currentView='piano';
 let pendingFood=null;
 let editPlanCtx=null;
@@ -255,10 +255,11 @@ async function loadFromCloud(){
     const data=await r.json();
     if(data&&data.diet)state.diet=data.diet;
     if(data&&data.customPlan)state.customPlan=data.customPlan;
+    if(data&&data.foodLibrary)state.foodLibrary=data.foodLibrary;
     setSyncStatus('ok');
   }catch(e){
     const local=localStorage.getItem('irontrack_diet');
-    if(local){try{const d=JSON.parse(local);if(d.diet)state.diet=d.diet;if(d.customPlan)state.customPlan=d.customPlan;}catch(x){}}
+    if(local){try{const d=JSON.parse(local);if(d.diet)state.diet=d.diet;if(d.customPlan)state.customPlan=d.customPlan;if(d.foodLibrary)state.foodLibrary=d.foodLibrary;}catch(x){}}
     setSyncStatus('offline');
   }
   render();
@@ -270,7 +271,7 @@ async function saveState(){
   try{
     let existing={};
     try{const r=await fetch(CLOUD_URL+'?t='+Date.now());existing=await r.json();}catch(e){}
-    const merged={...existing,diet:state.diet,customPlan:state.customPlan};
+    const merged={...existing,diet:state.diet,customPlan:state.customPlan,foodLibrary:state.foodLibrary};
     await fetch(CLOUD_URL,{method:'POST',mode:'no-cors',body:JSON.stringify(merged)});
     setSyncStatus('ok');
   }catch(e){setSyncStatus('offline')}
@@ -428,6 +429,7 @@ function renderAggiungi(){
         <button class="btn btn-accent" onclick="searchFood()">Cerca</button>
       </div>
       <div id="searchStatus"></div>
+      <div id="librarySection"></div>
       <div id="searchResultsList"></div>
       <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
         <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Inserimento manuale:</div>
@@ -450,6 +452,7 @@ function renderAggiungi(){
         <button class="btn btn-accent" style="width:100%;padding:14px" onclick="addManual()">Aggiungi al diario</button>
       </div>
     </div>`;
+  renderLibrarySection();
 }
 
 async function searchFood(){
@@ -516,6 +519,52 @@ function updateModalMacro(){
     <div class="macro-preview-item"><div class="v">${fat}g</div><div class="l">Grassi</div></div>`;
 }
 
+function saveToLibrary(food){
+  // food = {name, kcal100, prot100, carb100, fat100}
+  if(!state.foodLibrary) state.foodLibrary=[];
+  const existing=state.foodLibrary.findIndex(f=>f.name===food.name);
+  if(existing>=0){
+    state.foodLibrary[existing].lastUsed=Date.now();
+  } else {
+    state.foodLibrary.unshift({...food, lastUsed:Date.now()});
+    if(state.foodLibrary.length>50) state.foodLibrary=state.foodLibrary.slice(0,50);
+  }
+}
+
+function deleteFromLibrary(idx){
+  state.foodLibrary.splice(idx,1);
+  saveState();
+  renderLibrarySection();
+}
+
+function renderLibrarySection(){
+  const el=document.getElementById('librarySection');
+  if(!el)return;
+  const lib=state.foodLibrary||[];
+  if(lib.length===0){el.innerHTML='';return;}
+  let html=`<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:4px">📚 La mia libreria</div>`;
+  lib.slice(0,10).forEach((f,i)=>{
+    html+=`<div class="search-result" style="display:flex;align-items:center;gap:8px">
+      <div style="flex:1" onclick="selectLibraryFood(${i})">
+        <div class="search-result-name">${f.name}</div>
+        <div class="search-result-macro"><span>per 100g:</span><strong>${Math.round(f.kcal100)} kcal</strong><span>P:<strong>${Math.round(f.prot100)}g</strong></span><span>C:<strong>${Math.round(f.carb100)}g</strong></span><span>F:<strong>${Math.round(f.fat100)}g</strong></span></div>
+      </div>
+      <button onclick="event.stopPropagation();deleteFromLibrary(${i})" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 6px">✕</button>
+    </div>`;
+  });
+  el.innerHTML=html;
+}
+
+function selectLibraryFood(idx){
+  const f=state.foodLibrary[idx];
+  pendingFood={name:f.name,kcal100:f.kcal100,prot100:f.prot100,carb100:f.carb100,fat100:f.fat100};
+  document.getElementById('modalFoodName').textContent=f.name;
+  document.getElementById('modalFoodBrand').textContent='Libreria personale';
+  document.getElementById('modalQty').value=100;
+  updateModalMacro();
+  document.getElementById('modalFood').classList.remove('hidden');
+}
+
 function confirmAddFood(){
   if(!pendingFood)return;
   const qty=parseFloat(document.getElementById('modalQty').value)||100;
@@ -524,6 +573,7 @@ function confirmAddFood(){
   const d=getTodayDiet();
   if(!d.log)d.log=[];
   d.log.push({name:pendingFood.name,qty:Math.round(qty),meal,kcal:Math.round(pendingFood.kcal100*f),prot:Math.round(pendingFood.prot100*f),carb:Math.round(pendingFood.carb100*f),fat:Math.round(pendingFood.fat100*f),date:todayKey()});
+  saveToLibrary(pendingFood);
   saveState();
   closeModal('modalFood');
   pendingFood=null;
@@ -536,16 +586,23 @@ function addManual(){
   if(!name){alert('Inserisci il nome');return}
   const d=getTodayDiet();
   if(!d.log)d.log=[];
+  const kcal100=parseFloat(document.getElementById('manualKcal').value)||0;
+  const prot100=parseFloat(document.getElementById('manualProt').value)||0;
+  const carb100=parseFloat(document.getElementById('manualCarb').value)||0;
+  const fat100=parseFloat(document.getElementById('manualFat').value)||0;
+  const qty=parseFloat(document.getElementById('manualQty').value)||100;
+  const f=qty/100;
   d.log.push({
     name,
-    qty:parseFloat(document.getElementById('manualQty').value)||0,
+    qty,
     meal:document.getElementById('manualMeal').value,
-    kcal:parseFloat(document.getElementById('manualKcal').value)||0,
-    prot:parseFloat(document.getElementById('manualProt').value)||0,
-    carb:parseFloat(document.getElementById('manualCarb').value)||0,
-    fat:parseFloat(document.getElementById('manualFat').value)||0,
+    kcal:Math.round(kcal100*f),
+    prot:Math.round(prot100*f),
+    carb:Math.round(carb100*f),
+    fat:Math.round(fat100*f),
     date:todayKey()
   });
+  saveToLibrary({name,kcal100,prot100,carb100,fat100});
   saveState();
   ['manualName','manualQty','manualKcal','manualProt','manualCarb','manualFat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   const status=document.getElementById('searchStatus');
