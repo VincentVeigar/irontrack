@@ -113,6 +113,7 @@ select.text-input{appearance:none;-webkit-appearance:none;background-image:url("
 <nav class="bottom-nav">
   <button class="nav-btn active" id="navPiano" onclick="switchView('piano')"><span class="icon">🥗</span><span>Piano</span></button>
   <button class="nav-btn" id="navAggiungi" onclick="switchView('aggiungi')"><span class="icon">➕</span><span>Aggiungi</span></button>
+  <button class="nav-btn" id="navLibreria" onclick="switchView('libreria')"><span class="icon">📚</span><span>Libreria</span></button>
   <button class="nav-btn" id="navStorico" onclick="switchView('storico')"><span class="icon">📅</span><span>Storico</span></button>
 </nav>
 
@@ -279,13 +280,14 @@ async function saveState(){
 
 function switchView(v){
   currentView=v;
-  ['Piano','Aggiungi','Storico'].forEach(x=>document.getElementById('nav'+x)?.classList.toggle('active',x.toLowerCase()===v));
+  ['Piano','Aggiungi','Libreria','Storico'].forEach(x=>document.getElementById('nav'+x)?.classList.toggle('active',x.toLowerCase()===v));
   render();
 }
 
 function render(){
   if(currentView==='piano')renderPiano();
   else if(currentView==='aggiungi')renderAggiungi();
+  else if(currentView==='libreria')renderLibreria();
   else renderStorico();
 }
 
@@ -463,9 +465,8 @@ async function searchFood(){
   statusEl.innerHTML='<div style="padding:12px 0;color:var(--muted)"><span class="spinner"></span>Ricerca su Open Food Facts...</div>';
   listEl.innerHTML='';
   try{
-    const offUrl = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=8&lc=it&cc=it`;
-    const url = `https://corsproxy.io/?url=${encodeURIComponent(offUrl)}`;
-    const r=await fetch(url);
+    const url=`https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&fields=product_name,brands,nutriments&page_size=8&lc=it&cc=it`;
+    const r=await fetch(url,{headers:{'User-Agent':'IronTrackApp/1.0'}});
     const data=await r.json();
     searchResults=(data.products||[]).filter(p=>p.nutriments&&p.product_name);
     if(searchResults.length===0){statusEl.innerHTML='<div style="padding:12px 0;color:var(--muted)">Nessun risultato. Usa inserimento manuale.</div>';return}
@@ -534,7 +535,8 @@ function saveToLibrary(food){
 function deleteFromLibrary(idx){
   state.foodLibrary.splice(idx,1);
   saveState();
-  renderLibrarySection();
+  if(currentView==='libreria') renderLibreria();
+  else renderLibrarySection();
 }
 
 function renderLibrarySection(){
@@ -607,6 +609,76 @@ function addManual(){
   ['manualName','manualQty','manualKcal','manualProt','manualCarb','manualFat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
   const status=document.getElementById('searchStatus');
   if(status){status.innerHTML='<div style="padding:8px 0;color:var(--green)">✓ Aggiunto!</div>';setTimeout(()=>{if(status)status.innerHTML=''},2000)}
+}
+
+function getPlanFoods(){
+  // Estrai tutti i cibi unici dal piano base (allenamento + riposo)
+  const seen=new Set();
+  const foods=[];
+  ['allenamento','riposo'].forEach(type=>{
+    DEFAULT_PLAN[type].forEach(meal=>{
+      meal.items.forEach(item=>{
+        if(!seen.has(item.name)){
+          seen.add(item.name);
+          // kcal100 = kcal/qty*100
+          foods.push({
+            name:item.name,
+            kcal100:Math.round(item.kcal/item.qty*100),
+            prot100:Math.round(item.prot/item.qty*100*10)/10,
+            carb100:Math.round(item.carb/item.qty*100*10)/10,
+            fat100:Math.round(item.fat/item.qty*100*10)/10,
+            fromPlan:true
+          });
+        }
+      });
+    });
+  });
+  return foods;
+}
+
+function renderLibreria(){
+  const planFoods=getPlanFoods();
+  const lib=(state.foodLibrary||[]).filter(f=>!f.fromPlan);
+
+  let html=`<div class="section-header"><div class="section-title">Libreria Alimenti</div></div>`;
+
+  // Cibi dal piano
+  html+=`<div style="padding:0 16px 6px;font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:2px;color:var(--muted)">Dal piano base</div>`;
+  html+=`<div style="margin:0 16px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">`;
+  planFoods.forEach(f=>{
+    html+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:14px;font-weight:500">${f.name}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">per 100g — P:${f.prot100}g · C:${f.carb100}g · G:${f.fat100}g</div>
+      </div>
+      <div style="font-size:13px;font-weight:600;color:var(--accent2);white-space:nowrap">${f.kcal100} kcal</div>
+    </div>`;
+  });
+  html+=`</div>`;
+
+  // Cibi personali
+  html+=`<div style="padding:0 16px 6px;font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:2px;color:var(--muted)">I miei alimenti</div>`;
+  if(lib.length===0){
+    html+=`<div style="margin:0 16px;padding:24px;text-align:center;color:var(--muted);font-size:13px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)">
+      Nessun alimento aggiunto.<br>Cerca su Open Food Facts o inserisci manualmente dalla tab Aggiungi.
+    </div>`;
+  } else {
+    html+=`<div style="margin:0 16px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">`;
+    lib.forEach((f,i)=>{
+      const realIdx=state.foodLibrary.indexOf(f);
+      html+=`<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)">
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:500">${f.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">per 100g — P:${f.prot100}g · C:${f.carb100}g · G:${f.fat100}g</div>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:var(--accent2);margin-right:8px;white-space:nowrap">${Math.round(f.kcal100)} kcal</div>
+        <button onclick="deleteFromLibrary(${realIdx})" style="background:none;border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">✕</button>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  document.getElementById('mainContent').innerHTML=html;
 }
 
 function renderStorico(){
